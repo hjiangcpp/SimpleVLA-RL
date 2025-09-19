@@ -1,10 +1,7 @@
 set -x
 
 export NCCL_DEBUG=WARN 
-# Load environment variables from .env file
-if [ -f .env ]; then
-    source .env
-fi
+export WANDB_API_KEY=''
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export TOKENIZERS_PARALLELISM=true
 export CUDA_LAUNCH_BLOCKING=1
@@ -25,38 +22,38 @@ ALIGN_PATH="/home/hhjiang/Documents/SimpleVLA-RL/align.json"
 
 HYDRA_FULL_ERROR=1 python3 -m verl.trainer.main_ppo \
     data.task_suite_name=$DATASET_NAME \
-    data.num_trials_per_task=25 \
+    data.num_trials_per_task=50 \
     data.n_samples=8 \
     data.filter_accuracy=True \
     data.accuracy_lower_bound=0.1 \
     data.accuracy_upper_bound=0.9 \
     data.oversample_factor=1 \
-    data.train_batch_size=16 \
-    data.val_batch_size=32 \
-    data.max_prompt_length=64 \
-    data.max_response_length=32 \
+    data.train_batch_size=32 \
+    data.val_batch_size=128 \
+    data.max_prompt_length=256 \
+    data.max_response_length=128 \
     actor_rollout_ref.model.path=$SFT_MODEL_PATH \
     actor_rollout_ref.model.vla=$VLA_NAME \
     actor_rollout_ref.model.action_token_len=7 \
     actor_rollout_ref.model.action_chunks_len=8 \
     actor_rollout_ref.actor.optim.lr=5e-6 \
     actor_rollout_ref.actor.optim.warmup_style=constant \
-    actor_rollout_ref.actor.ppo_mini_batch_size=8 \
-    actor_rollout_ref.actor.ppo_micro_batch_size=$NUM_GPUS \
+    actor_rollout_ref.actor.ppo_mini_batch_size=64 \
+    actor_rollout_ref.actor.ppo_micro_batch_size=1 \
     actor_rollout_ref.actor.use_dynamic_bsz=True \
-    actor_rollout_ref.actor.fsdp_config.param_offload=False \
+    actor_rollout_ref.actor.fsdp_config.param_offload=True \
     actor_rollout_ref.actor.fsdp_config.grad_offload=True \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
     actor_rollout_ref.actor.grad_clip=1 \
     actor_rollout_ref.actor.clip_ratio_high=0.28 \
     actor_rollout_ref.actor.clip_ratio_low=0.2 \
     actor_rollout_ref.actor.num_images_in_input=1 \
-    actor_rollout_ref.actor.traj_mini_batch_size=2 \
+    actor_rollout_ref.actor.traj_mini_batch_size=8 \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.entropy_coeff=0. \
     actor_rollout_ref.rollout.num_images_in_input=1 \
-    actor_rollout_ref.rollout.val_micro_batch_size=1 \
+    actor_rollout_ref.rollout.val_micro_batch_size=4 \
     actor_rollout_ref.rollout.temperature=1.6 \
     actor_rollout_ref.rollout.experiment_name=$EXPERIMENT_NAME \
     actor_rollout_ref.rollout.micro_batch_size=1 \
@@ -66,12 +63,12 @@ HYDRA_FULL_ERROR=1 python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.num_steps_wait=10 \
     actor_rollout_ref.rollout.pretrained_checkpoint=$SFT_MODEL_PATH \
     actor_rollout_ref.rollout.center_crop=True \
-    actor_rollout_ref.rollout.max_prompt_length=64 \
-    actor_rollout_ref.rollout.log_prob_micro_batch_size=2 \
+    actor_rollout_ref.rollout.max_prompt_length=256 \
+    actor_rollout_ref.rollout.log_prob_micro_batch_size=16 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     actor_rollout_ref.rollout.name=hf \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.5 \
-    actor_rollout_ref.ref.log_prob_micro_batch_size=2 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
+    actor_rollout_ref.ref.log_prob_micro_batch_size=16 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     algorithm.kl_ctrl.kl_coef=0.00 \
     trainer.logger=['console','wandb'] \
@@ -88,7 +85,7 @@ HYDRA_FULL_ERROR=1 python3 -m verl.trainer.main_ppo \
     algorithm.adv_params.verifier_gamma=1.0 \
     algorithm.adv_params.reward_model_gamma=1.0 \
     trainer.runtime_env=$ALIGN_PATH \
-    trainer.wandb_mode=offline \
+    trainer.wandb_mode=online \
     trainer.val_before_train=True \
 
 

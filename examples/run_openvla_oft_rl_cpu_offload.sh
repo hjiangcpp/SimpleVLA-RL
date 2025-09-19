@@ -1,57 +1,61 @@
 set -x
 
 export NCCL_DEBUG=WARN 
-# Load environment variables from .env file
-if [ -f .env ]; then
-    source .env
-fi
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export TOKENIZERS_PARALLELISM=true
+export WANDB_API_KEY=''
+# 极端内存管理
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:16
+export TOKENIZERS_PARALLELISM=false
 export CUDA_LAUNCH_BLOCKING=1
 export TORCH_USE_CUDA_DSA=1
+# 强制CPU卸载
+export CUDA_VISIBLE_DEVICES=0
 
 PROJECT_NAME='SimpleVLA-RL'
-EXPERIMENT_NAME='test1_lr5e-6_bs128_node1' 
-# For openvla-oft Libero-Long traj1 SFT or traj all SFT models can be find in https://huggingface.co/collections/Haozhan72/simplevla-rl-6833311430cd9df52aeb1f86
+EXPERIMENT_NAME='test1_lr5e-6_bs4_node1_cpu_offload' 
 SFT_MODEL_PATH="/home/hhjiang/Documents/SimpleVLA-RL/simplevla-models/Haozhan72/Openvla-oft-SFT-libero10-traj1"
 CKPT_PATH="/home/hhjiang/Documents/SimpleVLA-RL/ckpt"
-# DATASET_NAME can be libero_10 (libero_Long), libero_90, libero_spatial, libero_object, libero_goal
 DATASET_NAME="libero_10"
 VLA_NAME="openvla-oft"
 NUM_GPUS=1
-# If you want to use 2*8 GPU to RL. Set NUM_NODES=2
 NUM_NODES=1 
 ALIGN_PATH="/home/hhjiang/Documents/SimpleVLA-RL/align.json"
 
+echo "Starting training with CPU offload configuration..."
+echo "Current GPU memory before training:"
+nvidia-smi --query-gpu=memory.used,memory.total --format=csv
+
+# 清理GPU缓存
+python3 -c "import torch; torch.cuda.empty_cache(); print('GPU cache cleared')"
+
 HYDRA_FULL_ERROR=1 python3 -m verl.trainer.main_ppo \
     data.task_suite_name=$DATASET_NAME \
-    data.num_trials_per_task=25 \
-    data.n_samples=8 \
+    data.num_trials_per_task=10 \
+    data.n_samples=1 \
     data.filter_accuracy=True \
     data.accuracy_lower_bound=0.1 \
     data.accuracy_upper_bound=0.9 \
     data.oversample_factor=1 \
-    data.train_batch_size=16 \
-    data.val_batch_size=32 \
-    data.max_prompt_length=64 \
-    data.max_response_length=32 \
+    data.train_batch_size=4 \
+    data.val_batch_size=8 \
+    data.max_prompt_length=32 \
+    data.max_response_length=16 \
     actor_rollout_ref.model.path=$SFT_MODEL_PATH \
     actor_rollout_ref.model.vla=$VLA_NAME \
     actor_rollout_ref.model.action_token_len=7 \
     actor_rollout_ref.model.action_chunks_len=8 \
     actor_rollout_ref.actor.optim.lr=5e-6 \
     actor_rollout_ref.actor.optim.warmup_style=constant \
-    actor_rollout_ref.actor.ppo_mini_batch_size=8 \
-    actor_rollout_ref.actor.ppo_micro_batch_size=$NUM_GPUS \
+    actor_rollout_ref.actor.ppo_mini_batch_size=4 \
+    actor_rollout_ref.actor.ppo_micro_batch_size=1 \
     actor_rollout_ref.actor.use_dynamic_bsz=True \
-    actor_rollout_ref.actor.fsdp_config.param_offload=False \
+    actor_rollout_ref.actor.fsdp_config.param_offload=True \
     actor_rollout_ref.actor.fsdp_config.grad_offload=True \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
     actor_rollout_ref.actor.grad_clip=1 \
     actor_rollout_ref.actor.clip_ratio_high=0.28 \
     actor_rollout_ref.actor.clip_ratio_low=0.2 \
     actor_rollout_ref.actor.num_images_in_input=1 \
-    actor_rollout_ref.actor.traj_mini_batch_size=2 \
+    actor_rollout_ref.actor.traj_mini_batch_size=1 \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.model.use_remove_padding=True \
     actor_rollout_ref.actor.entropy_coeff=0. \
@@ -66,29 +70,30 @@ HYDRA_FULL_ERROR=1 python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.num_steps_wait=10 \
     actor_rollout_ref.rollout.pretrained_checkpoint=$SFT_MODEL_PATH \
     actor_rollout_ref.rollout.center_crop=True \
-    actor_rollout_ref.rollout.max_prompt_length=64 \
-    actor_rollout_ref.rollout.log_prob_micro_batch_size=2 \
+    actor_rollout_ref.rollout.max_prompt_length=32 \
+    actor_rollout_ref.rollout.log_prob_micro_batch_size=1 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     actor_rollout_ref.rollout.name=hf \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.5 \
-    actor_rollout_ref.ref.log_prob_micro_batch_size=2 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.1 \
+    actor_rollout_ref.ref.log_prob_micro_batch_size=1 \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
     algorithm.kl_ctrl.kl_coef=0.00 \
-    trainer.logger=['console','wandb'] \
+    trainer.logger=['console'] \
     trainer.project_name=$PROJECT_NAME \
     trainer.experiment_name=$EXPERIMENT_NAME \
     trainer.default_local_dir=$CKPT_PATH/$PROJECT_NAME/$EXPERIMENT_NAME \
     trainer.n_gpus_per_node=$NUM_GPUS \
     trainer.nnodes=$NUM_NODES \
-    trainer.save_freq=25 \
-    trainer.test_freq=4 \
-    trainer.total_epochs=100 \
+    trainer.save_freq=100 \
+    trainer.test_freq=20 \
+    trainer.total_epochs=50 \
     trainer.val_only=False \
     algorithm.adv_estimator=grpo \
     algorithm.adv_params.verifier_gamma=1.0 \
     algorithm.adv_params.reward_model_gamma=1.0 \
     trainer.runtime_env=$ALIGN_PATH \
     trainer.wandb_mode=offline \
-    trainer.val_before_train=True \
+    trainer.val_before_train=False \
+
 
 

@@ -22,6 +22,19 @@ from functools import partial
 
 from verl import DataProto
 import torch
+
+# 设置量化引擎以减少显存使用
+torch.backends.quantized.engine = 'qnnpack'
+
+# 极端内存优化设置
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = True
+torch.backends.cuda.matmul.allow_tf32 = False
+torch.backends.cudnn.allow_tf32 = False
+
+# 设置更严格的内存分配
+import gc
+gc.set_threshold(100, 10, 10)  # 更频繁的垃圾回收
 from verl.utils.reward_score import gsm8k, math, countdown, multiply, logic
 from verl.trainer.ppo.ray_trainer import RayTrainer
 
